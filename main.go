@@ -10,7 +10,7 @@ import (
 
 const (
 	apiKeyProduce int16 = 0
-	apiKeyFetch   int16 = 0
+	apiKeyFetch   int16 = 1
 )
 
 type Message struct {
@@ -78,11 +78,37 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 
-		//apiKey := int16(binary.BigEndian.Uint16(requestBytes[0:2]))
+		apiKey := int16(binary.BigEndian.Uint16(requestBytes[0:2]))
 		//apiVersion := int16(binary.BigEndian.Uint16(requestBytes[2:4]))
-		//correlationID := int32(binary.BigEndian.Uint32(requestBytes[4:8]))
+		correlationID := int32(binary.BigEndian.Uint32(requestBytes[4:8]))
 
+		clientIDLen := int(binary.BigEndian.Uint16(requestBytes[8:10]))
+		headerEndOffset := 10 + clientIDLen
+		//clientID := string(requestBytes[10:headerEndOffset])
+
+		payload := requestBytes[headerEndOffset:]
+
+		slog.Info("Received reqest", "apiKey", apiKey, "correlationID", correlationID)
+
+		switch apiKey {
+		case apiKeyProduce:
+			s.handleProduce(conn, correlationID, payload)
+		case apiKeyFetch:
+			s.handleFetch(conn, correlationID, payload)
+		default:
+			slog.Warn("Received unknown API key", "apiKey", apiKey)
+		}
 	}
+}
+
+// parses produce request, adds message to buffer, sends response
+func (s *Server) handleProduce(conn net.Conn, correlationID int32, payload []byte) {
+	return
+}
+
+// parses fetch request, reads from buffer, sends messages back to client
+func (s *Server) handleFetch(conn net.Conn, correlationID int32, payload []byte) {
+	return
 }
 
 func main() {

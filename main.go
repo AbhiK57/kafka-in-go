@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"log/slog"
@@ -13,22 +14,31 @@ const (
 	apiKeyFetch   int16 = 1
 )
 
-type Message struct {
-	data []byte
+type Partition struct {
+	log           [][]byte
+	highWatermark int64
 	//..
 }
 type Server struct {
-	mu          sync.Mutex
-	consOffsets map[string]int
-	buffer      []Message
-	ln          net.Listener
+	mu     sync.Mutex
+	topics map[string]map[int32]*Partition
+	ln     net.Listener
 }
 
 func NewServer() *Server {
 	return &Server{
-		consOffsets: make(map[string]int),
-		buffer:      make([]Message, 0, 1024),
+		topics: make(map[string]map[int32]*Partition),
 	}
+}
+
+func (s *Server) getOrCreatePartition(topic string, partitionID int32) *Partition {
+	if _, ok := s.topics[topic]; !ok {
+		s.topics[topic] = make(map[int32]*Partition)
+	}
+	if _, ok := s.topics[topic][partitionID]; !ok {
+		s.topics[topic][partitionID] = &Partition{log: make([][]byte, 0)}
+	}
+	return s.topics[topic][partitionID]
 }
 
 func (s *Server) Start() error {
@@ -57,7 +67,7 @@ func (s *Server) Listen() error {
 
 func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
-	slog.Info("New Connection at ", conn.RemoteAddr())
+	slog.Info("New Connection", "remoteAddr", conn.RemoteAddr())
 
 	for {
 		//1. Read the Request (Size: 4 bytes)
@@ -78,23 +88,25 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 
-		apiKey := int16(binary.BigEndian.Uint16(requestBytes[0:2]))
-		//apiVersion := int16(binary.BigEndian.Uint16(requestBytes[2:4]))
-		correlationID := int32(binary.BigEndian.Uint32(requestBytes[4:8]))
+		//bytes.Reader allows for easier parsing: https://pkg.go.dev/bytes#NewReader
+		r := bytes.NewReader(requestBytes)
+		//parsing header using bytReader
+		apiKey, _ := readInt16(r)
+		//apiVersion, _ := readInt16(r) //routing for later
+		correlationID, _ := readInt32(r)
+		// clientID, _ := readString(r)
 
-		clientIDLen := int(binary.BigEndian.Uint16(requestBytes[8:10]))
-		headerEndOffset := 10 + clientIDLen
+		clientIDLen, _ := readInt16(r)
+		r.Seek(int64(clientIDLen), io.SeekCurrent)
 		//clientID := string(requestBytes[10:headerEndOffset])
-
-		payload := requestBytes[headerEndOffset:]
 
 		slog.Info("Received reqest", "apiKey", apiKey, "correlationID", correlationID)
 
 		switch apiKey {
 		case apiKeyProduce:
-			s.handleProduce(conn, correlationID, payload)
+			s.handleProduce(conn, correlationID, r)
 		case apiKeyFetch:
-			s.handleFetch(conn, correlationID, payload)
+			s.handleFetch(conn, correlationID, r)
 		default:
 			slog.Warn("Received unknown API key", "apiKey", apiKey)
 		}
@@ -102,12 +114,12 @@ func (s *Server) handleConn(conn net.Conn) {
 }
 
 // parses produce request, adds message to buffer, sends response
-func (s *Server) handleProduce(conn net.Conn, correlationID int32, payload []byte) {
+func (s *Server) handleProduce(conn net.Conn, correlationID int32, r *bytes.Reader) {
 	return
 }
 
 // parses fetch request, reads from buffer, sends messages back to client
-func (s *Server) handleFetch(conn net.Conn, correlationID int32, payload []byte) {
+func (s *Server) handleFetch(conn net.Conn, correlationID int32, r *bytes.Reader) {
 	return
 }
 

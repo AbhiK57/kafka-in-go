@@ -80,6 +80,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			}
 			return
 		}
+
 		requestSize := binary.BigEndian.Uint32(sizeBytes)
 
 		requestBytes := make([]byte, requestSize)
@@ -92,7 +93,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		r := bytes.NewReader(requestBytes)
 		//parsing header using bytReader
 		apiKey, _ := readInt16(r)
-		//apiVersion, _ := readInt16(r) //routing for later
+		apiVersion, _ := readInt16(r) //routing for later
 		correlationID, _ := readInt32(r)
 		// clientID, _ := readString(r)
 
@@ -100,7 +101,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		r.Seek(int64(clientIDLen), io.SeekCurrent)
 		//clientID := string(requestBytes[10:headerEndOffset])
 
-		slog.Info("Received reqest", "apiKey", apiKey, "correlationID", correlationID)
+		slog.Info("Received reqest", "apiKey", apiKey, "apiVersion", apiVersion, "correlationID", correlationID)
 
 		switch apiKey {
 		case apiKeyProduce:
